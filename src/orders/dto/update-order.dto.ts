@@ -1,6 +1,15 @@
-import { PartialType } from '@nestjs/mapped-types';
-import { CreateOrderDto } from './create-order.dto';
+import { OrderStatus } from "@prisma/client";
+import { OrderStatusList } from "../enum/order.enum";
+import { IsEnum, IsString } from "class-validator";
 
-export class UpdateOrderDto extends PartialType(CreateOrderDto) {
-  id: number;
+export class UpdateOrderDto {
+
+  @IsEnum(OrderStatusList, {
+    message: `Possible status values are ${OrderStatusList.toString()}`
+  })
+  status: OrderStatus;
+
+
+  @IsString()
+  id: string;
 }
