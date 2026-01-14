@@ -4,7 +4,7 @@ import { UpdateOrderDto } from './dto/update-order.dto';
 import { Prisma, PrismaClient } from '@prisma/client';
 import { ClientProxy, RpcException } from '@nestjs/microservices';
 import { OrderPaginationDTO } from './dto/order-pagination.dto';
-import { PRODUCT_SERVICE } from 'src/config';
+import { NATS_SERVICES } from 'src/config';
 import { firstValueFrom } from 'rxjs';
 import { OrderItemDTO } from './dto';
 
@@ -14,8 +14,8 @@ export class OrdersService extends PrismaClient implements OnModuleInit {
   private logger = new Logger("OrdersService")
 
   constructor(
-    @Inject(PRODUCT_SERVICE)
-    private readonly productsClient: ClientProxy
+    @Inject(NATS_SERVICES)
+    private readonly client: ClientProxy
   ) {
     super();
   }
@@ -27,7 +27,7 @@ export class OrdersService extends PrismaClient implements OnModuleInit {
 
   async create(createOrderDto: CreateOrderDto) {
     try {
-      const validatedProducts = await firstValueFrom(this.productsClient.send({ cmd: "validate_products" }, createOrderDto.items.map(item => item.productId)))
+      const validatedProducts = await firstValueFrom(this.client.send({ cmd: "validate_products" }, createOrderDto.items.map(item => item.productId)))
 
       const totalAmount = createOrderDto.items.reduce((acc, currentValue: OrderItemDTO) => {
 
@@ -121,7 +121,7 @@ export class OrdersService extends PrismaClient implements OnModuleInit {
         throw new RpcException({ status: HttpStatus.NOT_FOUND, message: `Order with id: ${id}, not found` })
       }
       
-      const validatedProducts = await firstValueFrom(this.productsClient.send({ cmd: "validate_products" }, order.orderItem.map(item => item.productId )))
+      const validatedProducts = await firstValueFrom(this.client.send({ cmd: "validate_products" }, order.orderItem.map(item => item.productId )))
       
       return {
         ...order,
@@ -166,7 +166,7 @@ export class OrdersService extends PrismaClient implements OnModuleInit {
 
   private handlerExceptions(error: any) {
 
-    if (error.status === HttpStatus.BAD_REQUEST) {
+    if (error.status && error.status === HttpStatus.BAD_REQUEST) {
       throw new RpcException({ status: HttpStatus.BAD_REQUEST, message: error.message })
     }
 
