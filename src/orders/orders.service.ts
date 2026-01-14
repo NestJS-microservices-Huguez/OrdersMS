@@ -105,15 +105,31 @@ export class OrdersService extends PrismaClient implements OnModuleInit {
       const order = await this.order.findFirst({
         where: {
           id
+        },
+        include: {
+          orderItem: {
+            select: {
+              price: true,
+              quantity: true,
+              productId: true,
+            }
+          }
         }
       })
 
       if (!order) {
         throw new RpcException({ status: HttpStatus.NOT_FOUND, message: `Order with id: ${id}, not found` })
       }
-
+      
+      const validatedProducts = await firstValueFrom(this.productsClient.send({ cmd: "validate_products" }, order.orderItem.map(item => item.productId )))
+      
       return {
-        order
+        ...order,
+        orderItem: order.orderItem.map( orderItem => ({
+          name: validatedProducts.find( product => product.id === orderItem.productId ).name,
+          price: orderItem.price,
+          quantity: orderItem.quantity,
+        }) )
       }
 
     } catch (error) {
@@ -123,14 +139,12 @@ export class OrdersService extends PrismaClient implements OnModuleInit {
 
   async update(id: string, updateOrderDto: UpdateOrderDto) {
     try {
-      const resp = await this.findOne(id)
+      const order = await this.findOne(id)
 
       const { status } = updateOrderDto
 
-      if (resp?.order.status === status) {
-        return {
-          order: resp.order
-        }
+      if (order?.status === status) {
+        return { ...order }
       }
 
       return {
