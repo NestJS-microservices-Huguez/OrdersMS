@@ -6,7 +6,8 @@ import { ClientProxy, RpcException } from '@nestjs/microservices';
 import { OrderPaginationDTO } from './dto/order-pagination.dto';
 import { NATS_SERVICES } from 'src/config';
 import { firstValueFrom } from 'rxjs';
-import { OrderItemDTO } from './dto';
+import { OrderItemDTO, PaidOrderDTO } from './dto';
+import { OrderWithProducts } from './interfaces';
 
 @Injectable()
 export class OrdersService extends PrismaClient implements OnModuleInit {
@@ -69,7 +70,7 @@ export class OrdersService extends PrismaClient implements OnModuleInit {
         ...order,
         orderItem: order.orderItem.map(orderItem => ({
           ...orderItem,
-          name: validatedProducts.find( product => product.id === orderItem.productId ).name
+          name: validatedProducts.find(product => product.id === orderItem.productId).name
         }))
       }
 
@@ -120,16 +121,16 @@ export class OrdersService extends PrismaClient implements OnModuleInit {
       if (!order) {
         throw new RpcException({ status: HttpStatus.NOT_FOUND, message: `Order with id: ${id}, not found` })
       }
-      
-      const validatedProducts = await firstValueFrom(this.client.send({ cmd: "validate_products" }, order.orderItem.map(item => item.productId )))
-      
+
+      const validatedProducts = await firstValueFrom(this.client.send({ cmd: "validate_products" }, order.orderItem.map(item => item.productId)))
+
       return {
         ...order,
-        orderItem: order.orderItem.map( orderItem => ({
-          name: validatedProducts.find( product => product.id === orderItem.productId ).name,
+        orderItem: order.orderItem.map(orderItem => ({
+          name: validatedProducts.find(product => product.id === orderItem.productId).name,
           price: orderItem.price,
           quantity: orderItem.quantity,
-        }) )
+        }))
       }
 
     } catch (error) {
@@ -162,6 +163,53 @@ export class OrdersService extends PrismaClient implements OnModuleInit {
     }
 
     return `This action updates a #${id} order`;
+  }
+
+  async createPaymentSession(order: OrderWithProducts) {
+    try {
+      if (!order) {
+        throw new RpcException({ status: HttpStatus.BAD_REQUEST, message: "No Order generated" })
+      }
+
+      const paymentSession = await firstValueFrom(
+        this.client.send('create.payment.session', {
+          orderId: order.id,
+          currency: 'usd',
+          items: [
+            ...order.orderItem.map(orderItem => ({
+              name: orderItem.name,
+              quantity: orderItem.quantity,
+              price: orderItem.price,
+            }))
+          ]
+        })
+      )
+
+      return paymentSession;
+    } catch (error) {
+      this.handlerExceptions(error)
+    }
+  }
+
+  async paidOrder( paidOrderDTO: PaidOrderDTO ){
+    
+    const order = await this.order.update({
+      where: { id: paidOrderDTO.orderId },
+      data: {
+        status: 'PAID',
+        paid: true,
+        paidAt: new Date(),
+        stripeChargeId: paidOrderDTO.stripePaymentId, 
+        orderReceipt: {
+          create: {
+            receiptUrl: paidOrderDTO.receiptUrl
+          }
+        }
+      }
+    })
+
+    return order
+    
   }
 
   private handlerExceptions(error: any) {
